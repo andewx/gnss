@@ -7,6 +7,5 @@ classdef AstroConstants
         J2 = 1.08262968e-3; % Earth's second zonal harmonic
         Re = 6378137.0; % Earth's equatorial radius in meters
         f = 1/298.257223563; % Earth's flattening factor
-        
     end
 end
