@@ -36,3 +36,8 @@ parpool("threads");
 
 This will initialize a pool using lightweight threads, not separate MATLAB workers (processes). It’s efficient for memory-bound tasks or when functions support thread-based execution.
 
+
+### Testing Methods
+
+We use the `MATLAB` `Sattelite Communications Toolbox` to generate a plausible 30-bit waveform and save this
+to a file. This file is used for testing the various GPS Signal Processing components in MATLAB
