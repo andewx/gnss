@@ -6,6 +6,11 @@ classdef TestDLL < matlab.unittest.TestCase
     
     methods (TestMethodSetup)
         function setup(testCase)
+            %Reference the parent directory
+            testDir = fileparts(mfilename('fullpath'));
+            parentDir = fullfile(testDir, '..');
+            resourceFile = fullfile(testDir, '..', 'resource_files','gpsWaveform.bb');
+            addpath(parentDir);
             % Create an instance of the DLL class before each test
             testCase.DLL = DLL();
         end

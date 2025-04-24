@@ -73,9 +73,7 @@ classdef GPSCodePLL < handle
         end 
 
 
-        function [freq, phase,samplesOut] = ComputeAndVisualize(obj,samples)
-        
-        end
+        function [freq, phase,samplesOut] = 
     end
 end
         

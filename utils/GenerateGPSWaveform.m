@@ -7,3 +7,4 @@
 % format.
 %
 
+openExample('satcom/GNSSSignalTransmissionUsingSDRExample')
