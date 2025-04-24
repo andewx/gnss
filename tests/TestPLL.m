@@ -22,8 +22,8 @@ classdef TestPLL < matlab.unittest.TestCase
         function testInitialization(testCase)
             % Test the initialization of the PLL object
             testCase.verifyNotEmpty(testCase.PLL);
-            testCase.verifyEqual(testCase.PLL.freqEst, 0);
-            testCase.verifyEqual(testCase.PLL.phaseEst, 0);
+            testCase.verifyEqual(testCase.PLL.f0, 0);
+            testCase.verifyEqual(testCase.PLL.phi, 0);
             testCase.verifyEqual(testCase.GPS.SampleRate, 4.092e6);
             testCase.verifyEqual(testCase.GPS.CenterFrequency, 0);
         end
@@ -31,12 +31,23 @@ classdef TestPLL < matlab.unittest.TestCase
        function testPLLCompute(testCase)
             samples = testCase.GPS();
             tic
-            samplesOutput = testCase.PLL.Compute(samples(1:testCase.PLL.N));
+            samplesOutput = testCase.PLL.Compute(0,samples(1:testCase.PLL.N));
             toc
             testCase.verifyNotEmpty(samplesOutput);
             testCase.verifySize(samplesOutput, [testCase.PLL.N,1]);
-            testCase.verifyEqual(testCase.PLL.phaseEst, 0);
-            testCase.verifyEqual(testCase.PLL.freqEst, 0);
+            testCase.verifyGreaterThan(abs(testCase.PLL.phi), 0);
+            testCase.verifyGreaterThan(abs(testCase.PLL.f0),0);
+       end
+
+
+       function testPLLVisualize(testCase)
+
+            samples = testCase.GPS();
+            [~,~,out] = testCase.PLL.ComputeAndVisualize(0,samples(1:testCase.PLL.N));
+            testCase.verifyNotEmpty(out);
+            testCase.verifySize(out, [testCase.PLL.N,1]);
+            testCase.verifyGreaterThan(abs(testCase.PLL.phi), 0);
+            testCase.verifyGreaterThan(abs(testCase.PLL.f0),0);
        end
 
 
