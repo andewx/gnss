@@ -14,11 +14,12 @@ classdef GPSCodeFLL < handle
         phaseOffset
         loopFilterFreq
         loopFilterPhase
+        code
     end
 
     methods
         % FLL Code Phase Tracking Estimates the code phase as a fractional delay into the correlation index
-        function obj = GPSCodeFLL(samplesPerChip, sampleRate)
+        function obj = GPSCodeFLL(samplesPerChip, sampleRate, prnCode, initialFrequencyOffset)
             % Constructor for the GPSCodeFLL class
             obj.sampleRate = sampleRate; % Sample rate
             obj.samplesPerChip = samplesPerChip; % Number of samples per chip
@@ -26,10 +27,11 @@ classdef GPSCodeFLL < handle
             obj.phaseVector = (1:(1024)).';
             obj.normalizedOffset = 1i.*2*pi/sampleRate;
             obj.windowFunc = blackmanharris(1024); %1024
-            obj.frequencyOffset = 0; % Initialize frequency offset
+            obj.frequencyOffset = initialFrequencyOffset; % Initialize frequency offset
             obj.phaseOffset = 0; % Initialize phase offset
-            obj.loopFilterFreq = GPSLoopFilter(0.00001, 1.207, 1.0, sampleRate); % Loop filter object
-            obj.loopFilterPhase = GPSLoopFilter(0.0001, 1.3, 1.0, sampleRate); % Loop filter object
+            obj.code = prnCode; % PRN code
+            obj.loopFilterFreq = GPSLoopFilter(0.001, 1.207, 1.0, sampleRate); % Loop filter object
+            obj.loopFilterPhase = GPSLoopFilter(0.001, 1.3, 1.0, sampleRate); % Loop filter object
 
         end
 
@@ -39,7 +41,7 @@ classdef GPSCodeFLL < handle
                 return
             end
 
-            samples = samples .* exp(-1i * (obj.normalizedOffset * obj.frequencyOffset +obj.phaseOffset));   
+            samples = GPSCarrierWipe(samples, obj.sampleRate, obj.frequencyOffset, obj.phaseOffset, false, obj.samplesPerChip, 0, obj.code, true);   
             updateSamples = samples(1:1024);%.*obj.windowFunc;
             % Apply current frequency offset to the samples
             fftdata = fft(updateSamples.^2,1024);

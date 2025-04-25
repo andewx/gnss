@@ -3,6 +3,7 @@ classdef TestFLL < matlab.unittest.TestCase
         % Define properties for the test case
         FLL
         GPS
+        PRN
     end
     
     methods (TestMethodSetup)
@@ -13,7 +14,8 @@ classdef TestFLL < matlab.unittest.TestCase
             resourceFile = fullfile(testDir, '..', 'resource_files','gps.bb');
             addpath(parentDir);
             % Create an instance of the FLL class before each
-            testCase.FLL = GPSCodeFLL(4, 40920000);
+            testCase.PRN = CACodeGenerator(3);
+            testCase.FLL = GPSCodeFLL(4, 40920000, testCase.PRN.PRN, -3.0011e3);
             testCase.GPS = comm.BasebandFileReader(resourceFile, "SamplesPerFrame",Inf);
         end
     end
@@ -28,7 +30,7 @@ methods (Test)
         end
         
         function testFLLCompute(testCase)
-            samplesPerFrame = 1024;
+            samplesPerFrame = 1024*testCase.FLL.samplesPerChip;
             samples = testCase.GPS();
             freqs = [];
             phases = [];
