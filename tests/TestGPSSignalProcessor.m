@@ -12,7 +12,7 @@ classdef TestGPSSignalProcessor < matlab.unittest.TestCase
             resourceFile = fullfile(testDir, '..', 'resource_files','gpsWaveform.bb');
             addpath(parentDir);
             % Create an instance of the GPSSignalProcessor class before each test
-            testCase.GPSSignalProcessor = GPSSignalProcessor();
+            testCase.GPSSignalProcessor = GPSSignalProcessor(3, 4,4.092e6);
         end
     end
     
@@ -20,23 +20,12 @@ classdef TestGPSSignalProcessor < matlab.unittest.TestCase
         function testInitialization(testCase)
             % Test the initialization of the GPSSignalProcessor object
             testCase.verifyNotEmpty(testCase.GPSSignalProcessor);
-            testCase.verifyEqual(testCase.GPSSignalProcessor.sampleRate, 0);
-            testCase.verifyEqual(testCase.GPSSignalProcessor.samplesPerChip, 0);
+            testCase.verifyEqual(testCase.GPSSignalProcessor.sampleRate, 4.092e6);
+            testCase.verifyEqual(testCase.GPSSignalProcessor.samplesPerChip, 4);
         end
         
-        function testSetSampleRate(testCase)
-            % Test setting the sample rate of the GPSSignalProcessor
-            newSampleRate = 1000;
-            testCase.GPSSignalProcessor.setSampleRate(newSampleRate);
-            testCase.verifyEqual(testCase.GPSSignalProcessor.sampleRate, newSampleRate);
-        end
         
-        function testSetSamplesPerChip(testCase)
-            % Test setting the samples per chip of the GPSSignalProcessor
-            newSamplesPerChip = 10;
-            testCase.GPSSignalProcessor.setSamplesPerChip(newSamplesPerChip);
-            testCase.verifyEqual(testCase.GPSSignalProcessor.samplesPerChip, newSamplesPerChip);
-        end
+ 
         
         function testProcessSignal(testCase)
             % Test processing a GPS signal with the GPSSignalProcessor

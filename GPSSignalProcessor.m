@@ -19,6 +19,8 @@ classdef GPSSignalProcessor < handle
         fllController           % FLL controller object
         pllController           % PLL controller object
         trackingMode            % tracking mode [ 1 = COARSE; 2 = FINE; 3 = COARSE(LO CONFIGURE)]
+        cmloN                   % number of iterations for the coarse LO mode
+        cmN                     % number of iterations for the coarse mode
     end
     
     methods
@@ -43,6 +45,8 @@ classdef GPSSignalProcessor < handle
             obj.fllController = GPSCodeFLL(samplesPerChip, obj.sampleRate);
             obj.pllController = GPSCodePLL(0.1, 0.707, 0.5, obj.sampleRate);
             obj.trackingMode = 1; % COARSE (LO CONFIGURE)
+            obj.cmloN = 20; % Number of iterations for the coarse LO mode    
+            obj.cmN = 20; % Number of iterations for the coarse mode
         end
 
 
@@ -59,43 +63,67 @@ classdef GPSSignalProcessor < handle
         end
 
 
-        function obj = ProcessSamples(obj,samples)
+        % Max Samples is 1023*300*samplesPerChip as we allow a full subframe of processing max
+        function [values] = ProcessSamples(obj,samples)
             % First perform the DLL tracking with the DLL update retrieving the update samples
             % process the samples in the 1ms code chunks with the given sample rates
+  
+            values = zeros(300,1);
+            vIdx = 1;
 
-            %Apply Frequency and phase correction prior to the Code Tracking Loop
-            samples = obj.pllController.Apply(obj.fllController.Apply(samples));
+            if length(samples) > 1023*obj.samplesPerChip*300
+                % Apply the frequency and phase correction to the samples
+                disp('Max Frame Samples Size Exceeded');
+                return
+            end
+
             % Apply the carrier wipe to the samples
             for k = 1:1023*obj.samplesPerChip:length(samples)
-                % Every 20ms we update the harware tracking frequency and need to recompute the FLL positions
-                if samplesProcessed > 1023*obj.samplesPerChip*20
-                    hardwareCorrect = true;
-                end
                 if k + 1023*obj.samplesPerChip - 1 > length(samples)
                     break;
                 end
+                %Apply Frequency and phase correction prior to the Code Tracking Loop
+                samples = obj.pllController.Apply(obj.fllController.Apply(samples));
                 % Get the samples for the current code chunk
                 codeSamples = samples(k:k+1023*obj.samplesPerChip-1);
                 % Get the code phase from the DLL controller
-                [despreadSamples, ~] = obj.dllController.AutoCorr(codeSamples);
+                [despreadSamples, value] = obj.dllController.Update(codeSamples);
+                values(vIdx) = value;
+                vIdx = vIdx + 1;
                 % Get the code phase from the FLL controller the FLL controller should only once every subframe and adjusts the
-                % Hardware Carrier Frequency
-                if hardwareCorrect
-                    [correction, ~,~] = obj.fllController.Compute(despreadSamples);
-                    % Perform frequency correction in hardware
-                    despreadSamples = despreadSamples .* exp(-1i * correction);
-                    frequencyCorrect = false;
-                else
-                    [correction, ~,~] = obj.fllController.Compute(despreadSamples);
-                    despreadSamples = despreadSamples .* exp(-1i * correction);
+                switch obj.trackingMode
+                    case 1 % COARSE
+                        % Get the code phase from the FLL controller
+                        obj.fllController.Compute(despreadSamples);
+                        if obj.cmN == 0
+                            % Apply the LO adjustment to the SDR hardware
+                            % Reset the FLL controller
+                            obj.fllController.Reset();
+                            obj.cmN = 20; % Reset the number of iterations for the coarse mode
+                            obj.trackingMode = 2; % Set the tracking mode to FINE
+                        else
+                            obj.cmN = obj.cmN - 1;
+                        end
+                    case 2 % FINE
+                        % Get the code phase from the FLL controller
+                        obj.pllController.Compute(despreadSamples);
+                        % If the fine mode is not converging switch back to coarse mode acquistion
+
+                    case 3 % COARSE(LO CONFIGURE)
+                        % Get the code phase from the FLL controller
+                        obj.fllController.Compute(despreadSamples);
+                        % Here we apply the LO adjustment to the SDR hardware and reset the FLL after a number of iterations
+                        if obj.cmloN == 0
+                            % Apply the LO adjustment to the SDR hardware
+                            % Reset the FLL controller
+                            obj.fllController.Reset();
+                            obj.cmloN = 20; % Reset the number of iterations for the coarse LO mode
+                            obj.trackingMode = 1; % Set the tracking mode to COARSE
+                        else
+                            obj.cmloN = obj.cmloN - 1;
+                        end
                 end
-
-                % Ajdust the PLL loop adjustment and apply to the samples
-                finalSamples = obj.pllController.Compute(despreadSamples);
-
-                % Apply the PLL delay to the samples and comput the integrated sum
-                value = sum(final)
-
+         
             end
             
 

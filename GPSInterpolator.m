@@ -70,14 +70,12 @@ classdef GPSInterpolator < handle
 
         end
 
-
         function samples = GetSamples(obj, data)
             samples = zeros(length(data),1);
             for i = 1:length(data)
                 samples(i) = obj.GetSample(data, i, false);
             end
         end
-
 
 
         function SetData(obj, data)

@@ -107,12 +107,16 @@ classdef GPSCodeDLL < handle
                 obj.codePhase = obj.codePhase + obj.codeLength;
             end
             
-            % Interpolate teh samples according to the code phase delay
-            samples = obj.Interpolate(samples, obj.codePhase);
+            % Interpolate the samples according to the code phase delay
+            obj.interpolator.UpdateMu(obj.codePhase);
+            samples = obj.interpolator.GetSamples(samples);
             % Despread the samples
             samples = obj.Despread(samples);
-            value = sum(samples);
-
+            
+            % Downsample the samples starting at the code delay position and integrate the despread signal
+            downsampledSamples = resample(samples(indexes(2):length(samples)), 1, obj.samplesPerChip);
+            value = sum(downsampledSamples);
+h
         end
 
         function [output] = Despread(obj, samples)

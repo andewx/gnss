@@ -28,7 +28,6 @@ classdef GPSCodeFLL < handle
             obj.normalizedOffset = 1i.*2*pi/sampleRate;
             obj.windowFunc = blackmanharris(1024); %1024
             obj.frequencyOffset = initialFrequencyOffset; % Initialize frequency offset
-            obj.phaseOffset = 0; % Initialize phase offset
             obj.code = prnCode; % PRN code
             obj.loopFilterFreq = GPSLoopFilter(0.001, 1.207, 1.0, sampleRate); % Loop filter object
             obj.loopFilterPhase = GPSLoopFilter(0.001, 1.3, 1.0, sampleRate); % Loop filter object
@@ -39,12 +38,11 @@ classdef GPSCodeFLL < handle
         function obj = Reset(obj)
             % Reset the FLL object
             obj.frequencyOffset = 0;
-            obj.phaseOffset = 0;
             obj.loopFilterFreq = GPSLoopFilter(0.001, 1.207, 1.0, obj.sampleRate); % Loop filter object
             obj.loopFilterPhase = GPSLoopFilter(0.001, 1.3, 1.0, obj.sampleRate); % Loop filter object
         end
 
-        function [output, frequencyOffset, phaseOffset] = Compute(obj, samples)
+    function [output] = Compute(obj, samples)
              % Compute the updated samples
             if length(samples) < 1024
                 return
@@ -55,20 +53,11 @@ classdef GPSCodeFLL < handle
             fftdata = fft(updateSamples.^2,1024);
             [~, maxIndex] = max(abs(fftdata));
             % Compute the frequency offset
-            frequencyOffset = (maxIndex - 1) * (obj.sampleRate / (4*1024));
-            % Compute the phase offset
-            phaseOffset = angle(fftdata(maxIndex));
-
-            obj.frequencyOffset = obj.loopFilterFreq.Filter(frequencyOffset);
-            obj.phaseOffset = obj.loopFilterPhase.Filter(phaseOffset);
-
-            frequencyOffset = obj.frequencyOffset;
-            phaseOffset = obj.phaseOffset;
-
-            samplesPerRadian = (2*pi)/obj.sampleRate;
+            fo = (maxIndex - 1) * (obj.sampleRate / (4*1024));
+            obj.frequencyOffset = obj.loopFilterFreq.Filter(fo);
 
             % Compute the updated samples
-            output = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset + obj.phaseOffset));            
+            output = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset));            
 
         end
 
