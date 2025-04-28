@@ -7,7 +7,6 @@ classdef GPSCodeFLL < handle
         sampleRate
         samplesPerChip
         M
-        phaseVector
         normalizedOffset
         windowFunc
         frequencyOffset
@@ -23,7 +22,6 @@ classdef GPSCodeFLL < handle
             obj.sampleRate = sampleRate; % Sample rate
             obj.samplesPerChip = samplesPerChip; % Number of samples per chip
             obj.M = 2; % Modulation order
-            obj.phaseVector = (1:(1024)).';
             obj.normalizedOffset = 1i.*2*pi/sampleRate;
             obj.windowFunc = blackmanharris(1024); %1024
             obj.frequencyOffset = initialFrequencyOffset; % Initialize frequency offset
