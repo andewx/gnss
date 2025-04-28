@@ -14,12 +14,11 @@ classdef GPSCodeFLL < handle
         phaseOffset
         loopFilterFreq
         loopFilterPhase
-        code
     end
 
     methods
         % FLL Code Phase Tracking Estimates the code phase as a fractional delay into the correlation index
-        function obj = GPSCodeFLL(samplesPerChip, sampleRate, prnCode, initialFrequencyOffset)
+        function obj = GPSCodeFLL(samplesPerChip, sampleRate, initialFrequencyOffset)
             % Constructor for the GPSCodeFLL class
             obj.sampleRate = sampleRate; % Sample rate
             obj.samplesPerChip = samplesPerChip; % Number of samples per chip
@@ -28,10 +27,8 @@ classdef GPSCodeFLL < handle
             obj.normalizedOffset = 1i.*2*pi/sampleRate;
             obj.windowFunc = blackmanharris(1024); %1024
             obj.frequencyOffset = initialFrequencyOffset; % Initialize frequency offset
-            obj.code = prnCode; % PRN code
             obj.loopFilterFreq = GPSLoopFilter(0.001, 1.207, 1.0, sampleRate); % Loop filter object
             obj.loopFilterPhase = GPSLoopFilter(0.001, 1.3, 1.0, sampleRate); % Loop filter object
-
         end
 
 

@@ -6,6 +6,7 @@ classdef GPSCodeDLL < handle
         codePhase
         code
         correlationBuffer
+        correlationIndexes
         interpolator
         loopFilter
         interpolationController
@@ -14,11 +15,12 @@ classdef GPSCodeDLL < handle
         interpolatedCode
         reversedInterpolatedCode
         samplesPerChip
+
     end
 
     methods
         % DLL Code Phase Tracking Estimates the code phase as a fractional delay into the correlation index
-        function obj = GPSCodeDLL(loopBandwidth, dampingFactor, loopGain, code, sampleRate, samplesPerChip)
+        function obj = GPSCodeDLL(code, sampleRate, samplesPerChip)
             % Constructor for the GPSCodeDLL class
             obj.sampleRate = sampleRate; % Sample rate
             obj.codeRate = 1.023e6; % Code rate in Hz
@@ -27,11 +29,11 @@ classdef GPSCodeDLL < handle
             obj.prnCode = code; % PRN code
             obj.samplesPerChip = samplesPerChip; % Number of samples per chip
             obj.interpolator = GPSInterpolator('PPF'); % Interpolator object
-            obj.loopFilter = GPSLoopFilter(loopBandwidth, dampingFactor, loopGain, sampleRate); % Loop filter object
-            obj.interpolationController = InterpolationController(); % Interpolation controller object
+            obj.loopFilter = GPSLoopFilter(1.0, 0.707, 1, sampleRate); % Loop filter object
             obj.interpolatedCode = resample(obj.prnCode.PRN, samplesPerChip, 1); % Interpolated PRN code
             obj.reversedInterpolatedCode = fliplr(obj.interpolatedCode); % Interpolated PRN code
             obj.mappedCode = 2 .* obj.prnCode.PRN - 1; % Map the code to -1,1
+            obj.correlationIndexes = zeros(3, 1); % Correlation indexes
         end
 
 
@@ -49,7 +51,7 @@ classdef GPSCodeDLL < handle
         % The early, prompt, and late signals are -0.5, 0.0, and 0.5
         % chips respectively. values is a [3 x 1] vector of the early, prompt, and late signals
         % indexes is a [3 x 1] vector of the indexes of the early, prompt, and late signals
-        function [values, index] = AutoCorr(obj,samples)
+        function [values] = AutoCorr(obj,samples)
             % Initialize the early, prompt, and late signals
 
             values = zeros(3, 1);
@@ -67,28 +69,22 @@ classdef GPSCodeDLL < handle
             values(1) = early;
             values(2) = prompt;
             values(3) = late;
-            index = promptIndex;
+            obj.correlationIndexes(1) = earlyIndex;
+            obj.correlationIndexes(2) = promptIndex;
+            obj.correlationIndexes(3) = lateIndex;
+
             
        end
-
-       function RotatePRN(obj, codePhase)
-            % Rotate the PRN code by the code phase
-            % The code is a 1023 bit code, so we need to map it to -1,1
-            obj.mappedCode = circshift(obj.mappedCode, -round(codePhase));
-            obj.interpolatedCode = circshift(obj.interpolatedCode, -round(codePhase));
-            obj.reversedInterpolatedCode = fliplr(obj.interpolatedCode); % Reverse the code
-        end
 
         % Update provides the DLL routine by computing the autocorrelation
         % of the incoming samples and updating the code phase
         % updating the prn code rotation and then interpolating the samples according
         % to the code phase delay and finally despreading the incoming signal, the value
         % output is the integration of the despread signal
-        function [samples, value] = Update(obj, samples)
+        function [samples] = Update(obj, samples)
             % Update the DLL with the early and late signal
             % Calculate the error signal
-            [values, indexes] = obj.AutoCorr(samples);
-            obj.RotatePRN(indexes(2));
+            [values] = obj.AutoCorr(samples);
             early = values(1);
             late = values(3);
 
@@ -113,10 +109,6 @@ classdef GPSCodeDLL < handle
             % Despread the samples
             samples = obj.Despread(samples);
             
-            % Downsample the samples starting at the code delay position and integrate the despread signal
-            downsampledSamples = resample(samples(indexes(2):length(samples)), 1, obj.samplesPerChip);
-            value = sum(downsampledSamples);
-h
         end
 
         function [output] = Despread(obj, samples)
@@ -124,6 +116,16 @@ h
             % The code is a 1023 bit code, so we need to map it to -1,1
             % We need to mix the PRN code and integrate the signal summation over the period to despread the signal
             output = (obj.mappedCode .* samples);
+        end
+
+        function [output] = GetCodePhase(obj)
+            % Get the code phase
+            output = obj.codePhase;
+        end
+
+        function [output] = GetCodePhaseIndex(obj)
+            % Get the code phase index
+            output = obj.correlationIndexes(2);
         end
     end 
 end

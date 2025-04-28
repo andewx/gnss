@@ -26,7 +26,7 @@ classdef GPSSatellite < handle
             obj.correlatorPos = 0;
             obj.LNAV = zeros(1500,1);
             obj.time;
-            obj.ephemerisObj = GPSEphemeris();
+            obj.ephemeris = Ephemeris();
         end
 
         function pos = Position(obj)

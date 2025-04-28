@@ -19,13 +19,11 @@ classdef GPSCodePLL < handle
         % fs: Sampling frequency
         % f0: Initial frequency of the incoming signal
         % N: Number of samples
-        function obj = GPSCodePLL(loopBandwidth, dampingFactor, loopGain, fs, f0, N)
+        function obj = GPSCodePLL(fs, f0)
             % Constructor for the GPSCodePLL class
-            obj.loopFilter = GPSLoopFilter(loopBandwidth, dampingFactor, loopGain,fs);
+            obj.loopFilter = GPSLoopFilter(0.1, 0.707, 1.0,fs);
             obj.fs = fs; % Sampling frequency
             obj.f0 = f0; % Frequency of the incoming signal     
-            obj.nco_out = zeros(1, N); % NCO output
-            obj.N = N; % Number of samples
             obj.phi = 0; % Initial phase estimate
             obj.normalizedOffset = 1i * 2 * pi / fs; % Normalized offset
             % Initialize the NCO output

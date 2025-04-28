@@ -77,7 +77,7 @@ classdef Ephemeris < handle
 
             % uk 
             uk = phik + deluk;
-            rk = obj.A^2(1- obj.e*cos(Ek)) + delrk;
+            rk = obj.A^2*(1- obj.e*cos(Ek)) + delrk;
             ik = obj.i0 + delik + obj.IDOT*tk;
 
 
