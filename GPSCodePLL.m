@@ -7,6 +7,7 @@ classdef GPSCodePLL < handle
         N
         phi
         loopFilter
+        normalizedOffset
     end
 
     methods
@@ -26,12 +27,13 @@ classdef GPSCodePLL < handle
             obj.nco_out = zeros(1, N); % NCO output
             obj.N = N; % Number of samples
             obj.phi = 0; % Initial phase estimate
+            obj.normalizedOffset = 1i * 2 * pi / fs; % Normalized offset
+            % Initialize the NCO output
             obj.f0 = f0; % Initial frequency estimate in Hz
         end
 
-        function [output] = Compute(obj,f0,r)
+        function [output] = Compute(obj,r)
             % Initialize loop variables
-            obj.f0 = f0;
             output = zeros(size(r));
             for n = 1:length(r)
                 v = exp(-1j * obj.phi);       % NCO output
@@ -42,16 +44,28 @@ classdef GPSCodePLL < handle
             end
         end 
 
+        function obj = Reset(obj)
+            % Reset the PLL object
+            obj.f0 = 0; % Reset frequency estimate
+            obj.phi = 0; % Reset phase estimate
+            obj.loopFilter = GPSLoopFilter(0.001, 1.207, 1.0, obj.fs); % Loop filter object
+        end
 
-        function [freqs, phases,output] = ComputeAndVisualize(obj,f0,r)
+        % Apply the current phase offset value to the samples
+        function [output] = Apply(obj, samples)
+            % Apply current frequence and phase offset normalized to the sampling rate
+            output = samples .* exp(-1j * obj.normalizedOffset * obj.phi); % Apply the current frequency and phase offset
+        end
+
+
+        function [freqs, phases,output] = ComputeAndVisualize(obj,r)
           % Initialize loop variables
-            obj.f0 = f0;
             output = zeros(size(r));
             freqs = zeros(size(r));
             phases = zeros(size(r));
            
             for n = 1:length(r)
-                v = exp(-1j * obj.phi);       % NCO output
+                v = exp(-1j * obj.normalizedOffset * obj.phi);       % NCO output
                 err = angle(r(n) * conj(v));  % Phase error (phase detector)
                 obj.f0 = obj.loopFilter.Filter(err);
                 obj.phi = obj.phi + obj.f0;    % Update phase

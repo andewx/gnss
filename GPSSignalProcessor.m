@@ -3,8 +3,8 @@ classdef GPSSignalProcessor < handle
         satellite               % GPS satellite object
         coder                   % prn coder
         prn                     % calculated PRN code
-        expandedPrn              % interpolated PRN code
-        revPrn                    % reversed PRN code
+        expandedPrn             % interpolated PRN code
+        revPrn                  % reversed PRN code
         preamble                % frame preamble
         parityBits              % 2 parity bits from previous frame used to decode current word
         sampleRate              % sample rate in Hz
@@ -15,8 +15,10 @@ classdef GPSSignalProcessor < handle
         dllController           % DLL controller object
         samplesBuffer           % samples for a triple buffered frame
         samplesBufferIndex      % index for the samples buffer
-        samplesPerChip         % number of samples per chip
+        samplesPerChip          % number of samples per chip
         fllController           % FLL controller object
+        pllController           % PLL controller object
+        trackingMode            % tracking mode [ 1 = COARSE; 2 = FINE; 3 = COARSE(LO CONFIGURE)]
     end
     
     methods
@@ -34,15 +36,13 @@ classdef GPSSignalProcessor < handle
             obj.preamble = [1 0 0 0 1 0 1 1];
             obj.sampleRate = sampleRate; % Sample rate in Hz
             obj.buffers = zeros(3, 1023*samplesPerChip);
-            obj.correlationBuffer = zeros(1023*samplesPerChip, 1);
             obj.samplesBuffer = zeros(3, 1023*samplesPerChip);
             obj.samplesBufferIndex = 1;
             obj.bufferIndex = 1;
             obj.dllController = GPSCodeDLL(0.1, 0.707, 0.5, 4, obj.sampleRate);
             obj.fllController = GPSCodeFLL(samplesPerChip, obj.sampleRate);
-            % Interpolate the PRN code by samplesPerChip
-            obj.expandedPrn = resample(obj.prn,samplesPerChip,1);
-            obj.revPrn = fliplr(obj.expandedPrn);
+            obj.pllController = GPSCodePLL(0.1, 0.707, 0.5, obj.sampleRate);
+            obj.trackingMode = 1; % COARSE (LO CONFIGURE)
         end
 
 
@@ -59,48 +59,49 @@ classdef GPSSignalProcessor < handle
         end
 
 
-        function obj = ProcessSamples(obj)
-            % Process the samples in the buffer
-            fllSamples = obj.fllController.Compute(obj.samplesBuffer(obj.bufferIndex, :));
-            % Interpolate the samples
-            
+        function obj = ProcessSamples(obj,samples)
+            % First perform the DLL tracking with the DLL update retrieving the update samples
+            % process the samples in the 1ms code chunks with the given sample rates
 
-            % Calculate the correlation
-            obj.AutoCorr(obj.samplesBuffer(obj.bufferIndex, :));
+            %Apply Frequency and phase correction prior to the Code Tracking Loop
+            samples = obj.pllController.Apply(obj.fllController.Apply(samples));
+            % Apply the carrier wipe to the samples
+            for k = 1:1023*obj.samplesPerChip:length(samples)
+                % Every 20ms we update the harware tracking frequency and need to recompute the FLL positions
+                if samplesProcessed > 1023*obj.samplesPerChip*20
+                    hardwareCorrect = true;
+                end
+                if k + 1023*obj.samplesPerChip - 1 > length(samples)
+                    break;
+                end
+                % Get the samples for the current code chunk
+                codeSamples = samples(k:k+1023*obj.samplesPerChip-1);
+                % Get the code phase from the DLL controller
+                [despreadSamples, ~] = obj.dllController.AutoCorr(codeSamples);
+                % Get the code phase from the FLL controller the FLL controller should only once every subframe and adjusts the
+                % Hardware Carrier Frequency
+                if hardwareCorrect
+                    [correction, ~,~] = obj.fllController.Compute(despreadSamples);
+                    % Perform frequency correction in hardware
+                    despreadSamples = despreadSamples .* exp(-1i * correction);
+                    frequencyCorrect = false;
+                else
+                    [correction, ~,~] = obj.fllController.Compute(despreadSamples);
+                    despreadSamples = despreadSamples .* exp(-1i * correction);
+                end
+
+                % Ajdust the PLL loop adjustment and apply to the samples
+                finalSamples = obj.pllController.Compute(despreadSamples);
+
+                % Apply the PLL delay to the samples and comput the integrated sum
+                value = sum(final)
+
+            end
+            
 
         end
         
-        % Autocorrelation function assumes that the we are sampling a
-        % single 1023 bit chip at a time with 1023 samples per chip
-        % The early, prompt, and late signals are -0.5, 0.0, and 0.5
-        % chips respectively. values is a [3 x 1] vector of the early, prompt, and late signals
-        % indexes is a [3 x 1] vector of the indexes of the early, prompt, and late signals
-       function [values, index] = AutoCorr(obj,samples)
-            % Initialize the early, prompt, and late signals
-
-            values = zeros(3, 1);
-
-            % Calculate autocorrelation with reverse filter
-            obj.correlationBuffer = filter(obj.revPrn, 1, samples);
-            absCorrelation = abs(obj.correlationBuffer);
-            idx = find(obj.correlationBuffer == max(absCorrelation), 1);
-            promptIndex = length(obj.prn) + idx - 1;
-            prompt = obj.correlationBuffer(promptIndex);
-            earlyIndex = promptIndex - obj.samplesPerChip;
-            early = obj.correlationBuffer(earlyIndex);
-            lateIndex = promptIndex + obj.samplesPerChip;
-            late = obj.correlationBuffer(lateIndex);
-            % Store the values and indexes
-            values(1) = early;
-            values(2) = prompt;
-            values(3) = late;
-            index = promptIndex;
-
-            % Update the buffer index
-            obj.bufferIndex = mod(obj.bufferIndex, 3) + 1;
-            
-       end
-
+    
 
 
 

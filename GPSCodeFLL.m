@@ -35,13 +35,21 @@ classdef GPSCodeFLL < handle
 
         end
 
+
+        function obj = Reset(obj)
+            % Reset the FLL object
+            obj.frequencyOffset = 0;
+            obj.phaseOffset = 0;
+            obj.loopFilterFreq = GPSLoopFilter(0.001, 1.207, 1.0, obj.sampleRate); % Loop filter object
+            obj.loopFilterPhase = GPSLoopFilter(0.001, 1.3, 1.0, obj.sampleRate); % Loop filter object
+        end
+
         function [output, frequencyOffset, phaseOffset] = Compute(obj, samples)
              % Compute the updated samples
             if length(samples) < 1024
                 return
             end
 
-            samples = GPSCarrierWipe(samples, obj.sampleRate, obj.frequencyOffset, obj.phaseOffset, false, obj.samplesPerChip, 0, obj.code, true);   
             updateSamples = samples(1:1024);%.*obj.windowFunc;
             % Apply current frequency offset to the samples
             fftdata = fft(updateSamples.^2,1024);
@@ -62,6 +70,12 @@ classdef GPSCodeFLL < handle
             % Compute the updated samples
             output = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset + obj.phaseOffset));            
 
+        end
+
+        % Apply the current frequency and phase offsets to the samples
+        function [samples] = Apply(obj, samples)
+            % Apply the frequency offset to the samples
+            samples = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset + obj.phaseOffset));
         end
 
         
