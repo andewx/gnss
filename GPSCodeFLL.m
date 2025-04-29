@@ -43,6 +43,9 @@ classdef GPSCodeFLL < handle
                 return
             end
 
+            % Apply the frequency offset to the samples
+            t = ((0:length(samples)-1) / obj.sampleRate).';
+
             updateSamples = samples(1:1024);%.*obj.windowFunc;
             % Apply current frequency offset to the samples
             fftdata = fft(updateSamples.^2,1024);
@@ -52,14 +55,17 @@ classdef GPSCodeFLL < handle
             obj.frequencyOffset = obj.loopFilterFreq.Filter(fo);
 
             % Compute the updated samples
-            output = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset));            
+            expTerm = exp(-1i * (obj.normalizedOffset * t * obj.frequencyOffset));
+            output = samples .* expTerm;            
 
         end
 
         % Apply the current frequency and phase offsets to the samples
         function [samples] = Apply(obj, samples)
             % Apply the frequency offset to the samples
-            samples = samples .* exp(-1i * obj.normalizedOffset* (obj.frequencyOffset + obj.phaseOffset));
+            t = ((0:length(samples)-1) / obj.sampleRate).';
+            expTerm = exp(-1i * (obj.normalizedOffset * obj.frequencyOffset*t + obj.phaseOffset));
+            samples = samples .* expTerm;
         end
 
         

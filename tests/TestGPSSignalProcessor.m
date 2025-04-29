@@ -60,7 +60,7 @@ classdef TestGPSSignalProcessor < matlab.unittest.TestCase
                     break;
                 end
                 % Process the samples
-                [values] = testCase.DSP.TestProcessrame(samples(n:n+samplesPerFrame-1));
+                [values] = testCase.DSP.TestProcessFrame(samples(n:n+samplesPerFrame-1));
             end
 
             % Value is integrated over 1ms display values

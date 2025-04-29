@@ -52,7 +52,9 @@ classdef GPSCodePLL < handle
         % Apply the current phase offset value to the samples
         function [output] = Apply(obj, samples)
             % Apply current frequence and phase offset normalized to the sampling rate
-            output = samples .* exp(-1j * obj.normalizedOffset * obj.phi); % Apply the current frequency and phase offset
+            % Apply the frequency offset to the samples
+               t = ((0:length(samples)-1) / obj.fs).';
+            output = samples .* exp(-1j * obj.normalizedOffset * t * obj.phi); % Apply the current frequency and phase offset
         end
 
 
