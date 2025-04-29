@@ -24,17 +24,16 @@ classdef GPSSignalProcessor < handle
         % for our implementation we try to receive 20ms x 3 of sample data (3 bits)
         % at the nominal 1.023 MhZ Sampling Rate. We need some form of parallelism that will
         % allow us to process the data while continuing to recieve data frames at this fundamental level
-        function obj = GPSSignalProcessor(id, samplesPerChip, sampleRate)
+        function obj = GPSSignalProcessor(id, samplesPerChip, sampleRate, initialFrequencyOffset)
             obj.satellite = GPSSatellite(id);
-            obj.coder = CACodeGenerator(id);
+            obj.coder = CACodeGenerator(id).generate();
             obj.samplesPerChip = samplesPerChip;
-            obj.prn = obj.coder.PRN;    
             obj.preamble = [1 0 0 0 1 0 1 1];
             obj.sampleRate = sampleRate; % Sample rate in Hz
             obj.samplesBuffer = zeros(3,1); % Buffer for received samples
             obj.samplesBufferIndex = 1; % Index for the samples buffer
             obj.dllController = GPSCodeDLL(obj.coder, obj.sampleRate, 4);
-            obj.fllController = GPSCodeFLL(samplesPerChip, obj.sampleRate,0);
+            obj.fllController = GPSCodeFLL(samplesPerChip, obj.sampleRate,initialFrequencyOffset);
             obj.pllController = GPSCodePLL(obj.sampleRate,0);
             obj.trackingMode = 1; % COARSE (LO CONFIGURE)
             obj.cmloN = 20; % Number of iterations for the coarse LO mode    
@@ -56,18 +55,19 @@ classdef GPSSignalProcessor < handle
             % Apply the carrier wipe to the samples
             for k = 1:1023*obj.samplesPerChip:length(samples)
 
-                k = obj.dllController.GetCodePhaseIndex() + k - 1;
+                k = obj.dllController.GetCodePhaseIndex() + k;
                 % Check if we have enough samples for the current code chunk
-                if k + 1023*obj.samplesPerChip - 1 > length(samples)
+                if k + 2*1023*obj.samplesPerChip - 1 > length(samples)
                     break;
                 end
 
+                subsamples = samples(k:k+2*1023*obj.samplesPerChip-1);
+
                 %Apply Frequency and phase correction prior to the Code Tracking Loop
-                samples = obj.pllController.Apply(obj.fllController.Apply(samples));
-                % Get the samples for the current code chunk
-                codeSamples = samples(k:k+1023*obj.samplesPerChip-1);
+                subsamples = obj.pllController.Apply(obj.fllController.Apply(subsamples));
+
                 % Get the code phase from the DLL controller
-                [despreadSamples] = obj.dllController.Update(codeSamples);
+                [despreadSamples] = obj.dllController.Update(subsamples);
                 
                 value = sum(resample(despreadSamples,1,obj.samplesPerChip));
                 values(vIdx) = value;
@@ -89,7 +89,7 @@ classdef GPSSignalProcessor < handle
                         end
                     case 2 % FINE
                         % Get the code phase from the FLL controller
-                        obj.pllController.Compute(despreadSamples);
+                        obj.pllController.PhaseError(despreadSamples);
                         % If the fine mode is not converging switch back to coarse mode acquistion
 
                     case 3 % COARSE(LO CONFIGURE)
@@ -122,8 +122,7 @@ classdef GPSSignalProcessor < handle
             vIdx = 1;
             % Create spectrum visualization
             visualizer = dsp.SpectrumAnalyzer('SampleRate', obj.sampleRate, ...
-                'PlotAsTwoSidedSpectrum', false, ...
-                'SpectralAveraging', true, ...
+                'PlotAsTwoSidedSpectrum', true, ...
                 'YLimits', [-100 0], ...
                 'Title', 'Spectrum Visualization', ...
                 'ShowLegend', true, ...
@@ -140,18 +139,19 @@ classdef GPSSignalProcessor < handle
             % Apply the carrier wipe to the samples
             for k = 1:1023*obj.samplesPerChip:length(samples)
 
-                k = obj.dllController.GetCodePhaseIndex() + k - 1;
+                k = obj.dllController.GetCodePhaseIndex() + k;
                 % Check if we have enough samples for the current code chunk
-                if k + 1023*obj.samplesPerChip - 1 > length(samples)
+                if k + 2*1023*obj.samplesPerChip - 1 >= length(samples)
                     break;
                 end
 
+                subsamples = samples(k:k+2*1023*obj.samplesPerChip-1);
+
                 %Apply Frequency and phase correction prior to the Code Tracking Loop
-                samples = obj.pllController.Apply(obj.fllController.Apply(samples));
-                % Get the samples for the current code chunk
-                codeSamples = samples(k:k+1023*obj.samplesPerChip-1);
+                subsamples = obj.pllController.Apply(obj.fllController.Apply(subsamples));
+       
                 % Get the code phase from the DLL controller
-                [despreadSamples] = obj.dllController.Update(codeSamples);
+                [despreadSamples] = obj.dllController.Update(subsamples);
                 
                 % Visualize the despread samples
                 visualizer(despreadSamples);
@@ -180,7 +180,7 @@ classdef GPSSignalProcessor < handle
                         end
                     case 2 % FINE
                         % Get the code phase from the FLL controller
-                        obj.pllController.Compute(despreadSamples);
+                        obj.pllController.PhaseError(despreadSamples);
                         % If the fine mode is not converging switch back to coarse mode acquistion
 
                     case 3 % COARSE(LO CONFIGURE)

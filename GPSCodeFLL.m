@@ -62,9 +62,10 @@ classdef GPSCodeFLL < handle
 
         % Apply the current frequency and phase offsets to the samples
         function [samples] = Apply(obj, samples)
-            % Apply the frequency offset to the samples
+            % Apply the frequency offset to the samples to entire data set
+            % If we need sample phase continuity we should use phase perfect sampling amounts
             t = ((0:length(samples)-1) / obj.sampleRate).';
-            expTerm = exp(-1i * (obj.normalizedOffset * obj.frequencyOffset*t + obj.phaseOffset));
+            expTerm = exp(-1i * (obj.normalizedOffset * obj.frequencyOffset*t));
             samples = samples .* expTerm;
         end
 

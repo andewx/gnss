@@ -30,16 +30,16 @@ classdef GPSCodePLL < handle
             obj.f0 = f0; % Initial frequency estimate in Hz
         end
 
-        function [output] = Compute(obj,r)
+        function [err] = PhaseError(obj,r)
             % Initialize loop variables
-            output = zeros(size(r));
             for n = 1:length(r)
                 v = exp(-1j * obj.phi);       % NCO output
                 err = angle(r(n) * conj(v));  % Phase error (phase detector)
                 obj.f0 = obj.loopFilter.Filter(err);
                 obj.phi = obj.phi + obj.f0;    % Update phase
-                output(n) = r(n) * conj(v);   % Carrier-wiped signal
             end
+
+            err = obj.phi;
         end 
 
         function obj = Reset(obj)
@@ -53,7 +53,7 @@ classdef GPSCodePLL < handle
         function [output] = Apply(obj, samples)
             % Apply current frequence and phase offset normalized to the sampling rate
             % Apply the frequency offset to the samples
-               t = ((0:length(samples)-1) / obj.fs).';
+        t = ((0:length(samples)-1) / obj.fs).';
             output = samples .* exp(-1j * obj.normalizedOffset * t * obj.phi); % Apply the current frequency and phase offset
         end
 

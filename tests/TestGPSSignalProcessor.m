@@ -13,7 +13,7 @@ classdef TestGPSSignalProcessor < matlab.unittest.TestCase
             resourceFile = fullfile(testDir, '..', 'resource_files','gps.bb');
             addpath(parentDir);
             % Create an instance of the GPSSignalProcessor class before each test
-            testCase.DSP = GPSSignalProcessor(3, 4,4.092e6);
+            testCase.DSP = GPSSignalProcessor(3, 4,4.092e6, -3.0011e3);
             testCase.GPS = comm.BasebandFileReader(resourceFile, "SamplesPerFrame",Inf);
         end
     end
