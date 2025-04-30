@@ -1,0 +1,6 @@
+#gitignore file
+resource_files/
+# Ignore log files
+*.bb
+
+
