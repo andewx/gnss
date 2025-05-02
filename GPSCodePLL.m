@@ -35,10 +35,8 @@ classdef GPSCodePLL < handle
             for n = 1:length(r)
                 v = exp(-1j * obj.phi);       % NCO output
                 err = angle(r(n) * conj(v));  % Phase error (phase detector)
-                obj.f0 = obj.loopFilter.Filter(err);
-                obj.phi = obj.phi + obj.f0;    % Update phase
+                obj.phi = obj.loopFilter.Filter(err);
             end
-
             err = obj.phi;
         end 
 
@@ -53,7 +51,7 @@ classdef GPSCodePLL < handle
         function [output] = Apply(obj, samples)
             % Apply current frequence and phase offset normalized to the sampling rate
             % Apply the frequency offset to the samples
-        t = ((0:length(samples)-1) / obj.fs).';
+            t = ((0:length(samples)-1) / obj.fs).';
             output = samples .* exp(-1j * obj.normalizedOffset * t * obj.phi); % Apply the current frequency and phase offset
         end
 

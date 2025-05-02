@@ -16,7 +16,7 @@ classdef GPSLoopFilter < handle
     methods
         function obj = GPSLoopFilter(loopBandwidth, dampingFactor, loopGain, sampleRate)
             % Constructor for the GPSLoopFilter class
-            M=4;
+            M=2;
             obj.loopBandwidth = loopBandwidth; % Loop bandwidth in Hz
             obj.dampingFactor = dampingFactor; % Damping factor
             obj.loopGain = loopGain; % Loop gain

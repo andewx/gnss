@@ -12,7 +12,7 @@ classdef TestDLL < matlab.unittest.TestCase
             resourceFile = fullfile(testDir, '..', 'resource_files','gps.bb');
             addpath(parentDir);
             % Create an instance of the DLL class before each test
-            testCase.DLL = GPSCodeDLL(CACodeGenerator(3).generate().', 4.092e6, 4); % PRN code 3, sample rate 4.092 MHz, samples per chip 4
+            testCase.DLL = GPSCodeDLL(CACodeGenerator(3).generate().', 2.046e6, 2); % PRN code 3, sample rate 4.092 MHz, samples per chip 4
         end
     end
     
@@ -26,78 +26,90 @@ classdef TestDLL < matlab.unittest.TestCase
         
         function testUpdateOutput(testCase)
             % Test updating the output of the DLL
-            fs = 4.092e6; % Sample rate
-            sampleTime = 0.001*20; % 20ms samples time
+            fs = 2.046e6; % Sample rate
+            carrier = 1.0e3; %1khz s Carrier
+            TIME = 100;  % 100ms
+            sampleTime = 0.001*TIME; % 100ms samples time
             t = (0:1/fs:sampleTime).'; % Time vector
+            DATA_RATE = 10;
+            SAMPLES_PER_CHIP = 2;
             % Create a test input signal (e.g., a sine wave)
-            inputSignal = sin(2*pi*1000*t); % 1kHz sine wave
+            inputSignal = cos(2*pi*carrier*t); % 10MhZ sine wave
 
             % Every 1ms/1023 chips modulate the input signal
             prnCode = CACodeGenerator(3).generate().';
-            data = rand(1,20);
-            data = 2 * data - 1; % Map the data to -1,1
+            %data = randi([0 1], TIME/DATA_RATE, 1); % Random data
+            data = [0 0 1 1 0 0 1 1 0 0]; % Test data
+            data = 2 .* data - 1; % Map the data to -1,1
             modCode = 2*prnCode - 1; % Map the code to -1,1
-            modCode = testCase.DLL.ExpandCode(modCode,4);
+            modCode = testCase.DLL.ExpandCode(modCode,SAMPLES_PER_CHIP);
             modulatedSignal = zeros(length(inputSignal),1);
 
-            for k = 1:4*1023:length(inputSignal)
-                if k+4*1023-1 >= length(inputSignal)
+            for k = 1:SAMPLES_PER_CHIP*1023:length(inputSignal)
+                if k+SAMPLES_PER_CHIP*1023-1 >= length(inputSignal)
                     break;
                 end
-                modulatedSignal(k:k+1023*4-1) = inputSignal(k:k+1023*4-1) .* modCode;
+                modPortion = inputSignal(k:k+1023*SAMPLES_PER_CHIP-1) .* modCode;
+                modulatedSignal(k:k+1023*SAMPLES_PER_CHIP-1) = modPortion;
             end
 
-            % Every 1ms apply a data modulation to the code
+            % Every 10ms apply a data modulation to the code
             j = 1;
-            for i = 1:1023*4:length(modulatedSignal)
-                if i+1023-1 > length(modulatedSignal)
+
+            for i = 1:1023*SAMPLES_PER_CHIP*DATA_RATE:length(modulatedSignal)
+                if i+1023*SAMPLES_PER_CHIP*DATA_RATE-1 > length(modulatedSignal)
                     break;
                 end
                 % Apply the data modulation to the code
-                modulatedSignal(i:i+1023*4-1) = modulatedSignal(i:i+1023*4-1) * data(j);
-                j = j + 1;
+                modulatedSignal(i:i+1023*SAMPLES_PER_CHIP*DATA_RATE-1) = modulatedSignal(i:i+1023*SAMPLES_PER_CHIP*DATA_RATE-1) * data(j);
+                j = j + 1;  
             end
+
+            % AWGN
+            modulatedSignal = awgn(modulatedSignal, 20);
             % Shift 1khz signal to DC
-            modulatedSignal = modulatedSignal .* exp(1i*2*pi*1000*t);
+            modulatedSignal = modulatedSignal .* exp(1i*2*pi*carrier*t);
             outputSignal = [];
-            indexes = [];
             phases = [];
-            % Test the DLL Despreading on the Code stepping through the samples
-            for k = 1:2*4*1023*testCase.DLL.samplesPerChip:length(modulatedSignal)
-                if k+2*4*1023*testCase.DLL.samplesPerChip-1 > length(modulatedSignal)
+            % Test the DLL Despreading on the Code stepping through the
+            % samples using 2ms steps in 100ms frame (20 iterations)
+            % framesize is 2ms minimum to handle any delays
+            FRAMESIZE = 2;
+            tic;
+            for k = 1:FRAMESIZE*1023*testCase.DLL.samplesPerChip:length(modulatedSignal)
+
+                k = k + floor(testCase.DLL.GetDelay());
+                if k+FRAMESIZE*1023*testCase.DLL.samplesPerChip-1 > length(modulatedSignal)
                     break;
                 end
-                % Process the samples
-                [signal, index, phase] = testCase.DLL.Update(modulatedSignal(k:k+2*1023*testCase.DLL.samplesPerChip-1))
-                indexes = [indexes; index]; % Still need to try and delay the signal by the prompt correlator output
+                % Process the samples update needs at least 2ms of samples
+                A = k;
+                B = k+FRAMESIZE*1023*testCase.DLL.samplesPerChip-1;
+                [signal, phase] = testCase.DLL.Update(modulatedSignal, A, B);
                 phases = [phases; phase];
                 outputSignal = [outputSignal; signal];
             end
+            processTime = toc
 
-            % Plot the output signal
-            figure;
-            plot(real(outputSignal));
-            title('Output Signal');
-            xlabel('Sample Index');
-            ylabel('Amplitude');
-            grid on;
+            finalSignal = lowpass(outputSignal, 500, fs);
 
-            %Plot the DLL indexes for delay
-            figure;
-            plot(indexes);
-            title('Output Delay Indexes');
-            xlabel('Chunk #');
-            ylabel('Index');
-            grid on;
+            % Timescope for the outputSignal
+            scope = timescope('SampleRate', testCase.DLL.sampleRate, 'TimeSpan', 0.1, 'TimeSpanSource', "property");
+            scope(finalSignal);
+            pause(10);
 
-            %Plot the DLL Code Phase compuation
+            % Spectrum Analyzer
+            sa = spectrumAnalyzer('SampleRate', testCase.DLL.sampleRate, 'PlotAsTwoSidedSpectrum', true, 'YLimits', [-100 0]);
+            sa(finalSignal);
+            pause(10);
+
             figure;
             plot(phases);
-            title("DLL Sample Phases");
-            title('Output Phases');
+            title('Phase Tracking');
+            xlabel('Chunk #');
             ylabel('Phase');
             grid on;
-            
+
 
         end
     end

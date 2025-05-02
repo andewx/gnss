@@ -1,0 +1,229 @@
+classdef GPSCodeDLL < handle
+    properties
+        sampleRate
+        codeRate
+        codeLength
+        earlyCode
+        lateCode
+        codeDelayInitial
+        codeDelayPhi
+        codeDelay
+        correlationBuffer
+        interpolator
+        loopFilter
+        prnCode
+        mappedCode
+        promptCode
+        reversedpromptCode
+        samplesPerChip
+        showBuffer
+        trackStatus
+        trackTime
+        fractionalDelay
+
+    end
+
+    methods
+        % DLL Code Phase Tracking Estimates the code phase as a fractional delay into the correlation index
+        function obj = GPSCodeDLL(code, sampleRate, samplesPerChip)
+            % Constructor for the GPSCodeDLL class
+            obj.sampleRate = sampleRate;                                    % Sample rate
+            obj.codeRate = 1.023e6;                                         % Code rate in Hz
+            obj.codeLength = 1023;                                          % Length of the C/A code
+            obj.prnCode = code;                                             % prompt code
+            obj.codeDelayInitial = 0;                                       % code delay
+            obj.codeDelayPhi = 0;                                    % code delay fractional part
+            obj.codeDelay = 0;                                         % code delay total
+            obj.samplesPerChip = samplesPerChip;                            % Number of samples per chip
+            obj.interpolator = GPSInterpolator('PPF');                      % Interpolator object
+            obj.loopFilter = GPSLoopFilter(0.01, 1.707, 1, sampleRate);      % Loop filter object
+            obj.promptCode = obj.ExpandCode(obj.prnCode, obj.samplesPerChip); % Interpolated PRN code
+            obj.earlyCode = obj.promptCode;                                   % early code
+            obj.lateCode = obj.promptCode;                                      % late code
+            obj.mappedCode = 2 .* obj.promptCode - 1;                 % Map the code to -1,1
+            obj.showBuffer = true;                                          % Show sample buffer
+            obj.trackStatus = 0;                                            %0 = NO LOCK (ACQUIRE WITH AUTOCORR | 1 = DLL TRACK
+            obj.trackTime = 0;                                              % Every 40ms recompute auto correlation
+            obj.fractionalDelay = 0;
+
+
+
+            % -------------- Apply Circular Shift to the Early Late Code
+            % (1/2 chip) - for this reason only use multiples of two for
+            % sampling rate and samples per chip we use 4
+
+            chipdel = floor(obj.samplesPerChip/2);
+            obj.earlyCode = circshift(obj.earlyCode,-chipdel);
+            obj.lateCode = circshift(obj.lateCode, chipdel);
+        end
+
+
+        function [interpolatedSamples] = Interpolate(obj, samples)
+            % Interpolate the samples using the code phase
+            obj.interpolator.UpdateMu(obj.fractionalDelay);
+            interpolatedSamples = obj.interpolator.GetSamples(samples);
+        end
+
+
+        % Autocorrelation function assumes that the we are sampling
+        % two 1023 bit chips at a time with 1023 samples per chip
+        % The early, prompt, and late signals are -0.5, 0.0, and 0.5
+        % chips respectively. values is a [3 x 1] vector of the early, prompt, and late signals
+        % indexes is a [3 x 1] vector of the indexes of the early, prompt,
+        % and late signals
+        % Note the autocorrelation is performed only once or when requested
+        % Or in our case every 10ms
+        function [corrOut] = AutoCorr(obj,samples)
+            % Initialize the early, prompt, and late signals
+
+            corrOut = zeros(3, 1);
+            % Calculate autocorrelation with reverse filter
+            %obj.correlationBuffer = filter(obj.reversedpromptCode, 1, real(samples));
+            obj.correlationBuffer = xcorr(obj.promptCode, real(samples));
+            absCorrelation = abs(obj.correlationBuffer);
+            [~, idx] = max(absCorrelation);
+            promptIndex = idx;
+            obj.codeDelayInitial = (idx - length(obj.promptCode));
+            obj.codeDelay= obj.codeDelayInitial;
+            obj.codeDelayPhi = 0;
+
+
+            % Show correlation buffer:
+            if obj.showBuffer
+                figure;
+                plot(obj.correlationBuffer);
+                obj.showBuffer = false;
+            end
+
+            if promptIndex < 1 || promptIndex > length(obj.correlationBuffer)
+                promptIndex = 1;
+                disp(['Prompt Index Out of Bounds: ', promptIndex]);
+            end
+
+            earlyIndex = promptIndex - 1;
+            lateIndex = promptIndex + 1;
+
+            if earlyIndex < 1
+                earlyIndex = 1;
+            end
+
+            if lateIndex > length(obj.correlationBuffer)
+                lateIndex = length(obj.correlationBuffer)-1;
+            end
+
+            prompt = obj.correlationBuffer(promptIndex);
+            early = obj.correlationBuffer(earlyIndex);
+            late = obj.correlationBuffer(lateIndex);
+            % Store the values and indexes
+            corrOut(1) = early;
+            corrOut(2) = prompt;
+            corrOut(3) = late;
+
+            
+        end
+
+
+        function [code] = ExpandCode(obj,prn, numSamples)
+            code = zeros(length(prn)*numSamples,1);
+            k = 1;
+            for i = 1:numSamples:length(code)
+                code(i:i+numSamples-1) = prn(k);
+                k = k+1;
+            end
+        end
+
+        % Update provides the DLL routine by computing the autocorrelation
+        % of the incoming samples and updating the code phase
+        % updating the prn code rotation and then interpolating the samples according
+        % to the code phase delay and finally despreading the incoming signal, the value
+        % output is the integration of the despread signal
+        function [output, delay] = Update(obj, samples,startIdx,endIdx)
+            % Update the DLL with the early and late signal
+            % Autocorrelation should only be done for two chipping codes worth of samples
+            dllN = obj.samplesPerChip*1023 -1;
+            delay = 0;
+            output = [];
+            if startIdx + dllN > length(samples)
+                return
+            end
+            % Acquire Initial Code Delay/Phase Fix and despread
+            if obj.trackStatus == 0
+                obj.AutoCorr(samples(startIdx:startIdx + dllN));
+                A = startIdx + obj.codeDelayInitial;
+                if A < 1 || A >= endIdx
+                    return
+                end
+                output = obj.Despread(samples(A:endIdx));  %% Samples Need to be Delayed Appropriately
+                delay = obj.codeDelay;
+                obj.trackStatus = 1;
+                return;
+           elseif obj.trackStatus == 1  % DLL Tracking Loop
+                 A = startIdx + obj.codeDelay;
+                 if A < 1 || A >= endIdx
+                    return
+                 end
+                 interpolatedSamples = obj.Interpolate(samples(A:endIdx));
+                 output = obj.Despread(interpolatedSamples);
+                 [early, ~, late] = obj.MixAndIntegrate(interpolatedSamples, 1);
+                 e = abs(early); l = abs(late);
+                 errSignal = 0.5*(sqrt(e-l)/sqrt(e + l));
+                 x = obj.loopFilter.Filter(errSignal);
+
+
+                % Update the code delay and phase
+                obj.codeDelayPhi = real(x); % Fractional delay from the loop filter
+                if obj.codeDelayPhi < 0
+                   obj.codeDelay = obj.codeDelayInitial + floor(obj.codeDelayPhi);
+                   obj.fractionalDelay = abs(floor(obj.codeDelayPhi) - obj.codeDelayPhi);
+                else
+                   obj.codeDelay = obj.codeDelayInitial + floor(obj.codeDelayPhi);
+                   obj.fractionalDelay = obj.codeDelayPhi - floor(obj.codeDelayPhi);
+                end
+        
+                delay = obj.codeDelay + obj.fractionalDelay;
+
+
+            end
+   
+        end
+
+        % Mix and Integrate Multiplies Incoming Code to produce xE, xP, and
+        % xL signals and integrates into an integrate and dump integrators
+        function [early, prompt, late] = MixAndIntegrate(obj, samples, idx)
+            mixSignal = samples(idx:idx + 1023*obj.samplesPerChip - 1);
+            if idx + 1023*obj.samplesPerChip - 1 > length(samples)
+                early = 0; late = 0; prompt = 0;
+                disp(['obj.MixAndIntegrate() Idx exceeds valid chipping start point']);
+                return;
+            end
+            xE = mixSignal .* obj.earlyCode;
+            xP = mixSignal.* obj.promptCode;
+            xL = mixSignal.* obj.lateCode;
+            early = sum(xE);
+            prompt = sum(xP);
+            late = sum(xL);
+        end
+
+        function [output] = Despread(obj, samples)
+            % Despread the samples by applying the PRN Code which is tracked in the DLL
+            % The code is a 1023 bit code, so we need to map it to -1,1
+            % We need to mix the PRN code and integrate the signal summation over the period to despread the signal
+            output = zeros(length(samples),1);
+            for k = 1:1023*obj.samplesPerChip:length(samples)
+                stp = k + 1023*obj.samplesPerChip-1;
+                if stp > length(samples)
+                    return;
+                end
+                mulSamples = samples(k:k+1023*obj.samplesPerChip-1);
+                outSamples = samples(k:k+1023*obj.samplesPerChip-1) .* obj.mappedCode;
+                output(k:k+1023*obj.samplesPerChip-1) = outSamples;
+            end
+        end
+
+
+        function [output] = GetDelay(obj)
+            % Get the code phase index
+            output = obj.codeDelay;
+        end
+    end 
+end

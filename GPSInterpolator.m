@@ -19,7 +19,7 @@ classdef GPSInterpolator < handle
             mu = 1.0; obj.alpha = 0.5;
             obj.filterType = filterType;
             obj.coeffs = zeros(4,1);
-            obj.mu = 0.0; 
+            obj.mu = 0.1; 
             obj.h(1) = - (1/6) * mu * (1 - mu) * (2 - mu);
             obj.h(2) = (1/2) * (1 - mu) * (1 - mu) * (1 + mu);
             obj.h(3) = (1/2) * mu * mu * (3 - 2*mu);
@@ -39,20 +39,14 @@ classdef GPSInterpolator < handle
         % will interpolate with a 4-TAP FIR buffer and shift in the sample
         % into the TAP buffer
         function sample = GetSample(obj, data, index, useTaps)
-            sample = 0;
+            sample = data(index);
             if useTaps
                 x = [data(index+1); data(index); obj.taps(2);  obj.taps(1)]; 
             else
-                if index > 2 && index < (length(obj.data)-1)
-                    x = [data(index-2);  data(index-1);   data(index);   data(index+1)];
+                if index > 1 && index < (length(obj.data)-2)
+                    x = [data(index-1);  data(index);   data(index+1);   data(index+2)];
                 else
-                    zd = complex(0,0);
-                    if index < (length(obj.data)-1)
-                     x = [data(index+1);  data(index);   zd;   zd];
-                    else
-                        x = [zd;data(index); zd;zd];
-                    end
-                    
+                    return;   
                 end
             end
 
@@ -60,7 +54,7 @@ classdef GPSInterpolator < handle
             if obj.filterType == "Farrow"
                 sample = sum(obj.h * x);
             else
-                 sample = dot(obj.coeffs,x);
+                sample = dot(obj.coeffs,x);
             end
 
             if useTaps
@@ -83,7 +77,7 @@ classdef GPSInterpolator < handle
         end
 
   
-        function UpdateTaps(obj, mu)
+        function UpdateMu(obj, mu)
 
             obj.mu = mu;
 
@@ -103,10 +97,6 @@ classdef GPSInterpolator < handle
                 obj.coeffs(4) = obj.alpha*obj.mu*(obj.mu-1);
             end
 
-        end
-
-        function UpdateMu(obj, value)
-            obj.mu = value;
         end
     end
 end
