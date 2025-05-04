@@ -36,13 +36,13 @@ classdef GPSCodeDLL < handle
             obj.codeDelay = 0;                                         % code delay total
             obj.samplesPerChip = samplesPerChip;                            % Number of samples per chip
             obj.interpolator = GPSInterpolator('PPF');                      % Interpolator object
-            obj.loopFilter = GPSLoopFilter(0.01, 1.707, 1, sampleRate);      % Loop filter object
+            obj.loopFilter = GPSLoopFilter(0.001, 1.707, 1, sampleRate);      % Loop filter object
             obj.promptCode = obj.ExpandCode(obj.prnCode, obj.samplesPerChip); % Interpolated PRN code
             obj.earlyCode = obj.promptCode;                                   % early code
             obj.lateCode = obj.promptCode;                                      % late code
-            obj.mappedCode = 2 .* obj.promptCode - 1;                 % Map the code to -1,1
+            obj.mappedCode = (1 - 2 .* obj.promptCode);                  % Map the code to -1,1 Q
             obj.showBuffer = true;                                          % Show sample buffer
-            obj.trackStatus = 0;                                            %0 = NO LOCK (ACQUIRE WITH AUTOCORR | 1 = DLL TRACK
+            obj.trackStatus = 1;                                            %0 = NO LOCK (ACQUIRE WITH AUTOCORR | 1 = DLL TRACK
             obj.trackTime = 0;                                              % Every 40ms recompute auto correlation
             obj.fractionalDelay = 0;
 
@@ -69,6 +69,16 @@ classdef GPSCodeDLL < handle
         end
 
 
+        function ShowCorrelation(obj)
+
+                figure;
+                plot(abs(obj.correlationBuffer));
+                title("Auto Correlation PRN");
+                return;
+
+        end
+
+
         % Autocorrelation function assumes that the we are sampling
         % two 1023 bit chips at a time with 1023 samples per chip
         % The early, prompt, and late signals are -0.5, 0.0, and 0.5
@@ -77,27 +87,21 @@ classdef GPSCodeDLL < handle
         % and late signals
         % Note the autocorrelation is performed only once or when requested
         % Or in our case every 10ms
-        function [corrOut] = AutoCorr(obj,samples)
+        function [z] = AutoCorr(obj,samples)
             % Initialize the early, prompt, and late signals
-
-            corrOut = zeros(3, 1);
+            z = 0; %zscore for peak
+  
             % Calculate autocorrelation with reverse filter
             %obj.correlationBuffer = filter(obj.reversedpromptCode, 1, real(samples));
-            obj.correlationBuffer = xcorr(obj.promptCode, real(samples));
+            obj.correlationBuffer = xcorr(obj.promptCode, imag(samples));
             absCorrelation = abs(obj.correlationBuffer);
-            [~, idx] = max(absCorrelation);
+            [val, idx] = max(absCorrelation);
             promptIndex = idx;
             obj.codeDelayInitial = (idx - length(obj.promptCode));
             obj.codeDelay= obj.codeDelayInitial;
             obj.codeDelayPhi = 0;
 
 
-            % Show correlation buffer:
-            if obj.showBuffer
-                figure;
-                plot(obj.correlationBuffer);
-                obj.showBuffer = false;
-            end
 
             if promptIndex < 1 || promptIndex > length(obj.correlationBuffer)
                 promptIndex = 1;
@@ -115,13 +119,9 @@ classdef GPSCodeDLL < handle
                 lateIndex = length(obj.correlationBuffer)-1;
             end
 
-            prompt = obj.correlationBuffer(promptIndex);
-            early = obj.correlationBuffer(earlyIndex);
-            late = obj.correlationBuffer(lateIndex);
-            % Store the values and indexes
-            corrOut(1) = early;
-            corrOut(2) = prompt;
-            corrOut(3) = late;
+            u = mean(absCorrelation);
+            o = std(absCorrelation);
+            z = (abs(val)-u)/o;
 
             
         end
@@ -144,7 +144,7 @@ classdef GPSCodeDLL < handle
         function [output, delay] = Update(obj, samples,startIdx,endIdx)
             % Update the DLL with the early and late signal
             % Autocorrelation should only be done for two chipping codes worth of samples
-            dllN = obj.samplesPerChip*1023 -1;
+            dllN = obj.samplesPerChip*1023*2-1;
             delay = 0;
             output = [];
             if startIdx + dllN > length(samples)
@@ -169,11 +169,43 @@ classdef GPSCodeDLL < handle
                  interpolatedSamples = obj.Interpolate(samples(A:endIdx));
                  output = obj.Despread(interpolatedSamples);
                  [early, ~, late] = obj.MixAndIntegrate(interpolatedSamples, 1);
-                 e = abs(early); l = abs(late);
+                 e = (early); l = (late);
                  errSignal = 0.5*(sqrt(e-l)/sqrt(e + l));
                  x = obj.loopFilter.Filter(errSignal);
 
 
+                % Update the code delay and phase
+                obj.codeDelayPhi = real(x); % Fractional delay from the loop filter
+                if obj.codeDelayPhi < 0
+                   obj.codeDelay = obj.codeDelayInitial + floor(obj.codeDelayPhi);
+                   obj.fractionalDelay = abs(floor(obj.codeDelayPhi) - obj.codeDelayPhi);
+                else
+                   obj.codeDelay = obj.codeDelayInitial + floor(obj.codeDelayPhi);
+                   obj.fractionalDelay = obj.codeDelayPhi - floor(obj.codeDelayPhi);
+                end
+        
+                delay = obj.codeDelay + obj.fractionalDelay;
+             elseif obj.trackStatus == 2  % DLL Tracking Loop with AutoCorr
+
+                 A = startIdx + obj.codeDelay;
+                 if A < 1 || A >= endIdx
+                    return
+                 end
+
+                obj.AutoCorr(samples(startIdx:startIdx + dllN));
+                A = startIdx + obj.codeDelayInitial;
+                if A < 1 || A >= endIdx
+                    return
+                end
+             
+                 interpolatedSamples = obj.Interpolate(samples(A:endIdx));
+                 output = obj.Despread(interpolatedSamples);
+                 [early, ~, late] = obj.MixAndIntegrate(interpolatedSamples, 1);
+                 e = (early); l = (late);
+                 errSignal = 0.5*(sqrt(e-l)/sqrt(e + l));
+                 x = obj.loopFilter.Filter(errSignal);
+    
+    
                 % Update the code delay and phase
                 obj.codeDelayPhi = real(x); % Fractional delay from the loop filter
                 if obj.codeDelayPhi < 0
@@ -216,7 +248,7 @@ classdef GPSCodeDLL < handle
                 if stp > length(samples)
                     return;
                 end
-                mulSamples = samples(k:k+1023*obj.samplesPerChip-1);
+                
                 outSamples = samples(k:k+1023*obj.samplesPerChip-1) .* obj.mappedCode;
                 output(k:k+1023*obj.samplesPerChip-1) = outSamples;
             end

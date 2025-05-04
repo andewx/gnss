@@ -74,7 +74,7 @@ classdef TestDLL < matlab.unittest.TestCase
             % Test the DLL Despreading on the Code stepping through the
             % samples using 2ms steps in 100ms frame (20 iterations)
             % framesize is 2ms minimum to handle any delays
-            FRAMESIZE = 2;
+            FRAMESIZE = 50;
             tic;
             for k = 1:FRAMESIZE*1023*testCase.DLL.samplesPerChip:length(modulatedSignal)
 
@@ -91,16 +91,16 @@ classdef TestDLL < matlab.unittest.TestCase
             end
             processTime = toc
 
-            finalSignal = lowpass(outputSignal, 500, fs);
+            outputSignal = real(outputSignal);
 
             % Timescope for the outputSignal
             scope = timescope('SampleRate', testCase.DLL.sampleRate, 'TimeSpan', 0.1, 'TimeSpanSource', "property");
-            scope(finalSignal);
+            scope(outputSignal);
             pause(10);
 
             % Spectrum Analyzer
             sa = spectrumAnalyzer('SampleRate', testCase.DLL.sampleRate, 'PlotAsTwoSidedSpectrum', true, 'YLimits', [-100 0]);
-            sa(finalSignal);
+            sa(outputSignal);
             pause(10);
 
             figure;

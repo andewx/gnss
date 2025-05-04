@@ -35,16 +35,80 @@ classdef GPSSignalProcessor < handle
             obj.sampleRate = sampleRate; % Sample rate in Hz
             obj.samplesBuffer = zeros(3,1); % Buffer for received samples
             obj.samplesBufferIndex = 1; % Index for the samples buffer
-            obj.dllController = GPSCodeDLL(obj.coder, obj.sampleRate, 4);
+            obj.dllController = GPSCodeDLL(obj.coder, obj.sampleRate, 2);
             obj.fllController = GPSCodeFLL(samplesPerChip, obj.sampleRate,initialFrequencyOffset);
             obj.pllController = GPSCodePLL(obj.sampleRate,0);
             obj.frequencyCorrection = initialFrequencyOffset;
             obj.trackingMode = 1; % COARSE (LO CONFIGURE)
             obj.cmloN = 20; % Number of iterations for the coarse LO mode    
-            obj.cmN = 20; % Number of iterations for the coarse mode
-            obj.frameT = 250; % 250 ms
-            obj.t = (0:1/sampleRate:obj.frameT*0.001).'; %250ms
+            obj.cmN = 10; % Number of iterations for the coarse mode
+            obj.frameT = 300; % 600 ms
+            obj.t = (0:1/sampleRate:obj.frameT*0.001).'; %600ms matches subframe size (actual subframe 1500)
         end
+
+
+        % Performs a 2D acquisition search of the PRN satellite signal -
+        % Identifies initial strongest correlation and phase delay observed
+        % 2ms signal- We assume a known satellite PRN ID but could adjust
+        % for this
+        function [frequency, delay] = Acquire2D(obj,samples)
+                frequencyOffset = -4000;
+                maxCorrelation = 0;
+                delay = 0;
+                A = 1;
+                B = 1023*obj.samplesPerChip*2 - 1;
+                subsamples = samples(A:B);
+                frequencyStep = 1;
+                frequencyRange = 8000;
+                frequency = 0;
+                zscores = [];
+                
+                for i = 1:frequencyStep:frequencyRange
+                    f = frequencyOffset +frequencyStep*i;
+                    corrSamples = subsamples .* exp(1i * 2 * pi * f * obj.t(A:B));
+                    zscore = obj.dllController.AutoCorr(corrSamples);
+                    zscores = [zscores; zscore];
+                    if zscore > maxCorrelation
+                       % obj.dllController.ShowCorrelation();
+                        maxCorrelation = zscore;
+                        delay = obj.dllController.codeDelayInitial;
+                        frequency = f;
+                        disp(['Frequency: ', num2str(f), ' Delay: ', num2str(delay)]);
+                    end
+    
+                end
+
+                % Plot the corrleation sequence for the detected highest z
+                % score with the delayed version of the samples
+                corrSamples = subsamples .* exp(1i * 2 *pi * f * obj.t(A:B));
+                
+                z = obj.dllController.AutoCorr(corrSamples);
+                obj.dllController.ShowCorrelation();
+
+
+                figure;
+                plot(zscores);
+                title('Z-Scores');
+                xlabel('Frequency Offset');
+                ylabel('Z-Score');
+                grid on;
+        end
+
+
+        function [output] = ApplyFrequencyCorrection(obj,samples)
+            A = 1;
+            B = length(samples);
+            output = [];
+            if B > length(obj.t)
+                disp('Error Samples Length Greater than Max ALlowed Frame Time');
+                return
+            end
+      
+            output = samples .* exp(1i * 2 * pi * obj.frequencyCorrection * obj.t(A:B));
+        end
+
+
+
 
         % ProcessSubFrame() - Performs Total GPS Receiver Loop on provided
         % samples which includes estimated Frequency/Phase Correction
@@ -62,15 +126,16 @@ classdef GPSSignalProcessor < handle
             % Applies Receiever loop and estimate on 1 bit frames (20ms)
             for k = 1:1023*obj.samplesPerChip*20:length(samples)
 
-
                 A = k;
                 B = k+1023*obj.samplesPerChip*20 - 1;
                 C = 1023*obj.samplesPerChip*20-1;
-                %Apply Frequency and phase correction prior to the Code Tracking Loop
-                subsamples = obj.pllController.Apply(obj.fllController.Apply(samples(A:B)));
 
-                % Get the code phase from the DLL controller
-                [despreadSamples] = obj.dllController.Update(subsamples,1,C);
+                if B > length(samples)
+                    return
+                end
+                
+                samples(A:B) = obj.fllController.Apply(samples(A:B),obj.t(A:B));
+                [despreadSamples] = obj.dllController.Update(samples,A,B);
                 
                 % Use the average to detect value for now
                 value = mean(despreadSamples);
@@ -89,15 +154,6 @@ classdef GPSSignalProcessor < handle
                     case 1 % COARSE
                         % Get the code phase from the FLL controller
                         obj.fllController.Compute(despreadSamples);
-                        if obj.cmN == 0
-                            % Apply the LO adjustment to the SDR hardware
-                            % Reset the FLL controller
-                            obj.fllController.Reset();
-                            obj.cmN = 20; % Reset the number of iterations for the coarse mode
-                            obj.trackingMode = 2; % Set the tracking mode to FINE
-                        else
-                            obj.cmN = obj.cmN - 1;
-                        end
                     case 2 % FINE
                         % Get the code phase from the FLL controller
                         err = obj.pllController.PhaseError(despreadSamples);
@@ -113,20 +169,9 @@ classdef GPSSignalProcessor < handle
                         obj.t = obj.t + 0.6;
                         samples(K:D) = samples(K:D).*exp(1i * 2 * pi * err * obj.t);
 
-
                     case 3 % COARSE(LO CONFIGURE)
                         % Get the code phase from the FLL controller
                         obj.fllController.Compute(despreadSamples);
-                        % Here we apply the LO adjustment to the SDR hardware and reset the FLL after a number of iterations
-                        if obj.cmloN == 0
-                            % Apply the LO adjustment to the SDR hardware
-                            % Reset the FLL controller
-                            obj.fllController.Reset();
-                            obj.cmloN = 20; % Reset the number of iterations for the coarse LO mode
-                            obj.trackingMode = 1; % Set the tracking mode to COARSE
-                        else
-                            obj.cmloN = obj.cmloN - 1;
-                        end
                 end
          
             end
@@ -134,7 +179,20 @@ classdef GPSSignalProcessor < handle
 
         end
 
+        % ShiftSamples() - Shifts the samples by the delay and resets the dll code initial delay to zero
+        function [shiftedSamples] = ShiftSamples(obj,samples, delay)
+            % Shift the samples by the delay
+            shiftedSamples = circshift(samples, -delay);
 
+            if delay > 0 %left shift
+                shiftedSamples(end-delay+1:end) = 0;
+            else %right shift
+                shiftedSamples(1:delay) = 0;
+            end
+
+            obj.dllController.codeDelayInitial = 0; % Reset the DLL code delay to zero
+            obj.dllController.codeDelay = 0; % Reset the DLL code delay to zero
+        end
 
         %% Test Case Process Frame Function with Visualization for debugging
          % Max Samples is 1023*300*samplesPerChip as we allow a full subframe of processing max
@@ -163,15 +221,23 @@ classdef GPSSignalProcessor < handle
                 A = k;
                 B = k+1023*obj.samplesPerChip*20 - 1;
                 C = 1023*obj.samplesPerChip*20-1;
+
+                  if B > length(samples)
+                    return
+                end
                 %Apply Frequency and phase correction prior to the Code Tracking Loop
-                subsamples = obj.pllController.Apply(obj.fllController.Apply(samples(A:B)));
+                samples(A:B) = obj.fllController.Apply(samples(A:B), obj.t(A:B));
 
                 % Get the code phase from the DLL controller
-                [despreadSamples] = obj.dllController.Update(subsamples,1,C);
+                [despreadSamples] = obj.dllController.Update(samples,A,B);
                 if length(despreadSamples) > 0
+                    disp('Processing samples');
                     scope(despreadSamples);
                     sa(despreadSamples);
-                    pause(20);
+                    pause(1);
+                else
+                    disp('No samples to process');
+                    return
                 end
                 
                 % Use the average to detect value for now

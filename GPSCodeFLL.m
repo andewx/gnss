@@ -42,10 +42,6 @@ classdef GPSCodeFLL < handle
             if length(samples) < 1024
                 return
             end
-
-            % Apply the frequency offset to the samples
-            t = ((0:length(samples)-1) / obj.sampleRate).';
-
             updateSamples = samples(1:1024);%.*obj.windowFunc;
             % Apply current frequency offset to the samples
             fftdata = fft(updateSamples.^2,1024);
@@ -53,22 +49,15 @@ classdef GPSCodeFLL < handle
             % Compute the frequency offset
             fo = (maxIndex - 1) * (obj.sampleRate / (4*1024));
             obj.frequencyOffset = obj.loopFilterFreq.Filter(fo);
+            output = obj.frequencyOffset;       
 
-            % Compute the updated samples
-            expTerm = exp(-1i * (obj.normalizedOffset * t * obj.frequencyOffset));
+    end
+
+    function [output] = Apply(obj,samples,t)
+         % Compute the updated samples
+            expTerm = exp(1i * (obj.normalizedOffset * t * obj.frequencyOffset));
             output = samples .* expTerm;            
-
-        end
-
-        % Apply the current frequency and phase offsets to the samples
-        function [samples] = Apply(obj, samples)
-            % Apply the frequency offset to the samples to entire data set
-            % If we need sample phase continuity we should use phase perfect sampling amounts
-            t = ((0:length(samples)-1) / obj.sampleRate).';
-            expTerm = exp(-1i * (obj.normalizedOffset * obj.frequencyOffset*t));
-            samples = samples .* expTerm;
-        end
-
+    end
         
     end
 end
