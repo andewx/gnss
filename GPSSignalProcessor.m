@@ -104,15 +104,12 @@ classdef GPSSignalProcessor < handle
         end
 
 
-        % ProcessSubFrame() - Performs Total GPS Receiver Loop on provided
+        % Track() - Performs Total GPS Receiver Loop on provided
         % samples which includes estimated Frequency/Phase Correction
-        % Followed by despreading, FLL/PLL application, and Value
-        % extraction - when the frame is processed we update obj.t for
-        % phase continuity - processes subframe size for 30 bits (600ms);
+        % and despreading
         function [values] = Track(obj,samples)
 
             values = [];
-            vIdx = 1;
             baseband = zeros(length(samples),1);
             FRAMESIZE = obj.frameSize;
             % Apply Estimated Frequency Correction to the Samples
@@ -133,6 +130,7 @@ classdef GPSSignalProcessor < handle
                 values = [values; (integratedOutput)/(B-A)];
             end
             
+            
 
         end
 
@@ -145,7 +143,6 @@ classdef GPSSignalProcessor < handle
         % extraction - when the frame is processed we update obj.t for
         % phase continuity - processes subframe size for 30 bits (250ms);
         function [values] = TestTrack(obj,samples)
-
             % Timescope for the outputSignal
             values = [];
             scope = timescope('SampleRate', obj.sampleRate, 'TimeSpan', length(samples)*(1/obj.sampleRate), 'TimeSpanSource', "property");
@@ -168,10 +165,7 @@ classdef GPSSignalProcessor < handle
                 [output,~,integratedOutput] = obj.dllController.Update(baseband,A,B);
                 values = [values; (integratedOutput)/(B-A)];
                 scope(output);
-            end
-
-            pause(5);
-            
+            end            
         end
     end
 end

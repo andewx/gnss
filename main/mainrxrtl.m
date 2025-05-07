@@ -22,16 +22,27 @@ fc = 920.1e6;
 rx = sdrrx('RTL-SDR','SamplesPerFrame',floor(SAMPLES*2),'OutputDataType','double', ...
     'BasebandSampleRate', fs, 'CenterFrequency', fc, 'Gain', -5.0);
 
+% Setup a scope to visualize the values
+scope = timescope('SampleRate', obj.sampleRate/1023, 'TimeSpan', length(samples)*(1/obj.sampleRate), 'TimeSpanSource', "property");
+
 % Acquire the signal
 disp('Acquiring Signal...');
 inputSignal = rx();
 DSP.Acquire2D(inputSignal, 500,true);
 disp('Signal Acquired - Starting Tracking...\n Press Ctrl-C to stop tracking.');
+DSP.TestTrack(inputSignal);
 quit = false;
 while ~quit
     % Receive and process the signal
     inputSignal = rx();
-    DSP.TestTrack(inputSignal);
+   vals =  DSP.Track(inputSignal);
+   scope(vals);
+    % Check for user input to stop tracking
+     if ishandle(scope)
+          quit = false;
+     else
+          quit = true;
+     end
 end
 
 release(rx);
