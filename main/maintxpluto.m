@@ -66,8 +66,11 @@ transmitRepeat(tx, signal);
 
 
 quit = false;
-
+dispMessage = false;
 while ~quit
-    disp('Continuing to transmit... Press Ctrl+C to stop.');
+    if ~dispMessage
+        disp('Transmitting GNSS Signal on 920.1MhZ... Press Ctrl+C to stop.');
+        dispMessage = true;
+    end
     % Wait for Ctrl+C to stop the transmission
 end
