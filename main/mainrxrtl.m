@@ -14,6 +14,10 @@ DSP = GPSSignalProcessor(3,SAMPLES_PER_CHIP,1.023e6*SAMPLES_PER_CHIP, 0);
 % Test updating the output of the DLL
 SAMPLES_PER_CHIP = 2;
 fs = 1.023e6*SAMPLES_PER_CHIP; % Sample rate
+DATA_RATE = 20; % 20ms 
+NUM_DATA_BITS = 10;
+SAMPLE_TIME = (DATA_RATE*NUM_DATA_BITS)*1e-3;
+SAMPLES = floor(SAMPLE_TIME*fs);
 
 % Send Through Pluto Hardware at 920MHZ
 fc = 920.1e6;
