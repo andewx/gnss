@@ -8,7 +8,7 @@ parentDir = fullfile(thisDir, '..');
 addpath(parentDir);
 
 
-SAMPLES_PER_CHIP = 2;
+SAMPLES_PER_CHIP = 1;
 fs = 1.023e6*SAMPLES_PER_CHIP; % Sample rate
 DATA_RATE = 20; % 20ms 
 NUM_DATA_BITS = 5;
@@ -30,15 +30,11 @@ rx = comm.SDRRTLReceiver('CenterFrequency',fc,...
       'SampleRate', fs, ...
       'OutputDataType','double',...
       'SamplesPerFrame',floor(SAMPLES),...
-      'FrequencyCorrection',0,...
-      'TunerGain', 30.0);
-
-% Setup a scope to visualize the values
-scope = timescope('SampleRate', fs/1023, 'TimeSpan', SAMPLES*(1/fs), 'TimeSpanSource', "property");
+      'FrequencyCorrection',0);
 
 % Acquire the signal
 disp('Acquiring Signal...');
-inputSignal = rx();
+inputSignal = rx()*2^5;
 DSP.Acquire2D(inputSignal, 500,true);
 disp('Signal Acquired - Starting Tracking...\n Press Ctrl-C to stop tracking.');
 DSP.TestTrack(inputSignal);
