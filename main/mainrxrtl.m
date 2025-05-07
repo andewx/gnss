@@ -41,18 +41,5 @@ inputSignal = rx();
 DSP.Acquire2D(inputSignal, 500,true);
 disp('Signal Acquired - Starting Tracking...\n Press Ctrl-C to stop tracking.');
 DSP.TestTrack(inputSignal);
-quit = false;
-while ~quit
-    % Receive and process the signal
-    inputSignal = rx();
-   vals =  DSP.Track(inputSignal);
-   scope(vals);
-    % Check for user input to stop tracking
-     if ishandle(scope)
-          quit = false;
-     else
-          quit = true;
-     end
-end
-
+pause(10);
 release(rx);
