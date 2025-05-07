@@ -2,80 +2,101 @@ classdef TestGPSSignalProcessor < matlab.unittest.TestCase
     properties
         % Define properties for the test case
         DSP
+        PRN
         GPS
+
     end
     
     methods (TestMethodSetup)
         function setup(testCase)
             %Reference the parent directory
+            SAMPLES_PER_CHIP = 2;
             testDir = fileparts(mfilename('fullpath'));
             parentDir = fullfile(testDir, '..');
             resourceFile = fullfile(testDir, '..', 'resource_files','gps.bb');
             addpath(parentDir);
-            % Create an instance of the GPSSignalProcessor class before-0.1030e3 + each test
-            testCase.DSP = GPSSignalProcessor(1, 2,2.046e6, -2.6721e3);
-            testCase.GPS = comm.BasebandFileReader(resourceFile, "SamplesPerFrame",Inf);
+            % Create an instance of the FLL class before ach
+            testCase.PRN = CACodeGenerator(3);
+            testCase.DSP = GPSSignalProcessor(3,SAMPLES_PER_CHIP,1.023e6*SAMPLES_PER_CHIP, 0);
+            testCase.GPS = comm.BasebandFileReader(resourceFile);
         end
     end
-    
-    methods (Test)
+
+methods (Test)
         function testInitialization(testCase)
-            % Test the initialization of the GPSSignalProcessor object
+            % Test the initialization of the FLL object
             testCase.verifyNotEmpty(testCase.DSP);
-            testCase.verifyEqual(testCase.DSP.sampleRate, 2.046e6);
-            testCase.verifyEqual(testCase.DSP.samplesPerChip, 2);
+            testCase.verifyNotEmpty(testCase.GPS);
         end
         
-    
-        function testProcessFrame(testCase)
-            % Test processing a GPS signal with the GPSSignalProcessor in
-            % 100ms frames (5 bits) - Samples at 600ms total (30 bits)
+        % Tests GPSSignalProcessor with controlled simple signal for
+        function testControlledMethod(testCase)
+           % Test updating the output of the DLL
+            SAMPLES_PER_CHIP = 2;
+            INITIAL_CODE_DELAY = floor(1023 * randn());
+            fs = 1.023e6*SAMPLES_PER_CHIP; % Sample rate
+            carrier = 1.0e3; %1khz s Carrier
+            TIME = 100;  % 100ms
+            sampleTime = 0.001*TIME; % 100ms samples time
+            t = (0:1/fs:sampleTime).'; % Time vector
+            DATA_RATE = 10;
 
-            subframe = testCase.GPS();
-            B = (1023*testCase.DSP.samplesPerChip*300)+1;
-            subframe = (subframe(1:B));
+            % Create a test input signal (e.g., a sine wave)
+            inputSignal = 1.0 * exp(-1j * 2 * pi * carrier * t);
 
-            % Acquisition Search Method First
-            [freq, delay] = testCase.DSP.Acquire2D(testCase.DSP.ApplyFrequencyCorrection(subframe));
-            testCase.DSP.frequencyCorrection = testCase.DSP.frequencyCorrection + freq;
+            % Every 1ms/1023 chips modulate the input signal
+            prnCode = CACodeGenerator(3).generate().';
+            prnCode = circshift(prnCode, INITIAL_CODE_DELAY);
+            %data = randi([0 1], TIME/DATA_RATE, 1); % Random data
+            data = [0 0 1 1 0 0 1 1 0 0]; % Test data
+            data = 2 .* data - 1; % Map the data to -1,1
+            modCode = (2*prnCode - 1)*1j; % Map the code to -1,1 on the Q Branch
+            modCode = testCase.DSP.dllController.ExpandCode(modCode,SAMPLES_PER_CHIP);
+            modulatedSignal = zeros(length(inputSignal),1);
 
-            % Left Shift/Right Shift Samples by the delay
-            subframe = testCase.DSP.ShiftSamples(subframe, delay);
-            
-            values = [];
-            tic
-            [values] = testCase.DSP.ProcessSubFrame(subframe);
-            timeElapsed = toc;
-            testCase.verifyLessThan(timeElapsed, 0.6);
+            for k = 1:SAMPLES_PER_CHIP*1023:length(inputSignal)
+                if k+SAMPLES_PER_CHIP*1023-1 >= length(inputSignal)
+                    break;
+                end
+                modPortion = inputSignal(k:k+1023*SAMPLES_PER_CHIP-1) .* modCode;
+                modulatedSignal(k:k+1023*SAMPLES_PER_CHIP-1) = modPortion;
+            end
+
+            % Every 10ms apply a data modulation to the code
+            j = 1;
+
+            for i = 1:1023*SAMPLES_PER_CHIP*DATA_RATE:length(modulatedSignal)
+                if i+1023*SAMPLES_PER_CHIP*DATA_RATE-1 > length(modulatedSignal)
+                    break;
+                end
+                % Apply the data modulation to the code
+                modulatedSignal(i:i+1023*SAMPLES_PER_CHIP*DATA_RATE-1) = modulatedSignal(i:i+1023*SAMPLES_PER_CHIP*DATA_RATE-1) * data(j);
+                j = j + 1;  
+            end
+
+            % Pass Signal through AWGN Channel and Mix to ZeroIF
+            modulatedSignal = awgn(modulatedSignal, 20);
+            fc = carrier*0.80;
+            modulatedSignal = modulatedSignal .* exp(1i*2*pi*fc*t);
+
+            % Track our output signal and phase adjustments
+            outputSignal = [];
+            phases = [];
+            FRAMESIZE = 1;
+
+            testCase.DSP.Acquire2D(modulatedSignal, 500,true);
+            values = testCase.DSP.TestTrack(modulatedSignal);
+
 
             figure;
-            plot(values);
-          
+            plot(imag(values));
+            xlabel("Sequence");
+            ylabel("Bit Value");
+            grid on;
+
+
         end
 
-        function testVisualization(testCase)
-             % Test processing a GPS signal with the GPSSignalProcessor in
-            % 100ms frames (5 bits) - Samples at 500ms total (25 bits) - Q
-            % Component Data
-            subframe = testCase.GPS();
-            B = (1023*testCase.DSP.samplesPerChip*300)+1;
-            subframe = (subframe(1:B));
 
-            % Acquisition Search Method First
-            [freq, delay] = testCase.DSP.Acquire2D(testCase.DSP.ApplyFrequencyCorrection(subframe));
-            testCase.DSP.frequencyCorrection = testCase.DSP.frequencyCorrection + freq;
-
-            % Left Shift/Right Shift Samples by the delay
-            subframe = testCase.DSP.ShiftSamples(subframe, delay);
-
-            values = [];
-            tic
-            [values] = testCase.DSP.TestProcessSubFrame(subframe);
-            timeElapsed = toc;
-            testCase.verifyLessThan(timeElapsed, 0.25);
-
-            figure;
-            plot(values);
-        end
     end
 end

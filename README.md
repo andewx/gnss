@@ -5,9 +5,19 @@
 > Running this application on your host machine requires the following:
 
 - MATLAB 2024b
-- Communications Toolbox
-- DSP Toolbox
-- Parallel Computation Toolbox
+- Communications Toolbox (Pluto and RTL - SDR Hardware Support)
+
+
+> **Status** - Currently the project is able to setup and test a raw receiver over hardware (PlutoSDR/RTL-SDR) utilizing the `GPSSignalProcessor` class for `Acquire2D` and the `Track`/`TestTrack` functions. Other classes which were implemented ahead of time are scaffolding for decoding LNAV Data. See `main` folder `main.m` matlab file for a working example which hand generates the "GPS" signal and sends over hardware.
+
+Currently project is demonstration purposes only and is therefore not optimized for realtime GNSS Signal Decoding.
+
+
+#### MATLAB Executable Scripts
+
+1. `main.m` Test GPS signal transmission and reception on Hardware through a loop back device.
+2. `maintxpluto.m` Utilizes Pluto SDR as a Transmitter for a continuous alternating binary sequence every 20ms on 920.1MHZ
+3. `mainrxrtl.m` Acquires and Tracks Single Frame on RTL-SDR Hardware
 
 
 ### Developer Notes

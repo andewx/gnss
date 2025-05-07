@@ -16,7 +16,7 @@ classdef GPSInterpolator < handle
 
         % Interpolation is a 4 tap filter
         function obj = GPSInterpolator(filterType)
-            mu = 1.0; obj.alpha = 0.5;
+            mu = 0.0; obj.alpha = 0.5;
             obj.filterType = filterType;
             obj.coeffs = zeros(4,1);
             obj.mu = 0.1; 
@@ -43,8 +43,13 @@ classdef GPSInterpolator < handle
             if useTaps
                 x = [data(index+1); data(index); obj.taps(2);  obj.taps(1)]; 
             else
-                if index > 1 && index < (length(obj.data)-2)
-                    x = [data(index-1);  data(index);   data(index+1);   data(index+2)];
+                if index > 2 && index < (length(obj.data)-2)
+                    if obj.mu > 0
+                        x = [data(index-1);  data(index);   data(index+1);   data(index+2)];
+                    else
+                        obj.UpdateMu(abs(obj.mu));
+                        x =  [data(index+1);  data(index);   data(index-1);   data(index-2)];
+                    end
                 else
                     return;   
                 end
