@@ -130,7 +130,7 @@ classdef GPSSignalProcessor < handle
                 values = [values; (integratedOutput)/(B-A)];
             end
             
-            
+
 
         end
 
@@ -165,7 +165,9 @@ classdef GPSSignalProcessor < handle
                 [output,~,integratedOutput] = obj.dllController.Update(baseband,A,B);
                 values = [values; (integratedOutput)/(B-A)];
                 scope(output);
-            end            
+            end       
+            
+            pause(10);
         end
     end
 end
